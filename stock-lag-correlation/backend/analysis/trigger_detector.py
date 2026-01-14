@@ -10,7 +10,6 @@ from typing import Optional, List
 import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import and_, func
 
 import sys
@@ -249,29 +248,34 @@ class TriggerDetector:
         timeframe: str
     ):
         """
-        トリガー銘柄をDBに保存
+        Save trigger tickers to DB (upsert)
         """
         if self.session is None:
             raise ValueError("DB session is required")
 
         for _, row in triggers_df.iterrows():
-            stmt = insert(DailyTrigger).values(
-                ticker_code=row['ticker'],
-                date=trigger_date,
-                timeframe=timeframe,
-                return_value=float(row['return']),
-                volume_ratio=float(row['volume_ratio'])
-            ).on_conflict_do_update(
-                index_elements=['ticker_code', 'date', 'timeframe'],
-                set_={
-                    'return_value': float(row['return']),
-                    'volume_ratio': float(row['volume_ratio'])
-                }
-            )
-            self.session.execute(stmt)
+            existing = self.session.query(DailyTrigger).filter(
+                and_(
+                    DailyTrigger.ticker_code == row['ticker'],
+                    DailyTrigger.date == trigger_date,
+                    DailyTrigger.timeframe == timeframe
+                )
+            ).first()
+
+            if existing:
+                existing.return_value = float(row['return'])
+                existing.volume_ratio = float(row['volume_ratio'])
+            else:
+                self.session.add(DailyTrigger(
+                    ticker_code=row['ticker'],
+                    date=trigger_date,
+                    timeframe=timeframe,
+                    return_value=float(row['return']),
+                    volume_ratio=float(row['volume_ratio'])
+                ))
 
         self.session.commit()
-        logger.info(f"{len(triggers_df)}件のトリガーをDBに保存しました")
+        logger.info(f"{len(triggers_df)} triggers saved to DB")
 
     def get_triggers_from_db(
         self,

@@ -13,7 +13,7 @@ import pandas as pd
 import yfinance as yf
 from tqdm import tqdm
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import text
 
 import sys
 sys.path.append('..')
@@ -327,48 +327,54 @@ class DataFetcher:
 
     def save_tickers_to_db(self, tickers: List[Dict[str, str]]):
         """
-        銘柄マスタをDBに保存
+        Save ticker master data to DB (upsert)
         """
         for ticker_info in tickers:
-            stmt = insert(Ticker).values(
-                ticker_code=ticker_info['ticker_code'],
-                company_name=ticker_info['company_name'],
-                sector=ticker_info.get('sector', ''),
-                market_cap=ticker_info.get('market_cap')
-            ).on_conflict_do_update(
-                index_elements=['ticker_code'],
-                set_={
-                    'company_name': ticker_info['company_name'],
-                    'sector': ticker_info.get('sector', ''),
-                    'market_cap': ticker_info.get('market_cap')
-                }
-            )
-            self.session.execute(stmt)
+            existing = self.session.query(Ticker).filter(
+                Ticker.ticker_code == ticker_info['ticker_code']
+            ).first()
+
+            if existing:
+                existing.company_name = ticker_info['company_name']
+                existing.sector = ticker_info.get('sector', '')
+                existing.market_cap = ticker_info.get('market_cap')
+            else:
+                self.session.add(Ticker(
+                    ticker_code=ticker_info['ticker_code'],
+                    company_name=ticker_info['company_name'],
+                    sector=ticker_info.get('sector', ''),
+                    market_cap=ticker_info.get('market_cap')
+                ))
 
         self.session.commit()
-        logger.info(f"{len(tickers)}銘柄をDBに保存しました")
+        logger.info(f"{len(tickers)} tickers saved to DB")
 
     def save_prices_to_db(self, ticker: str, df: pd.DataFrame):
         """
-        日次株価データをDBに保存
+        Save daily price data to DB (upsert)
         """
         if df is None or df.empty:
             return
 
         for date_val, row in df.iterrows():
-            stmt = insert(DailyPrice).values(
-                ticker_code=ticker,
-                date=date_val,
-                adj_close=float(row['adj_close']),
-                volume=int(row['volume']) if pd.notna(row['volume']) else None
-            ).on_conflict_do_update(
-                index_elements=['ticker_code', 'date'],
-                set_={
-                    'adj_close': float(row['adj_close']),
-                    'volume': int(row['volume']) if pd.notna(row['volume']) else None
-                }
-            )
-            self.session.execute(stmt)
+            existing = self.session.query(DailyPrice).filter(
+                DailyPrice.ticker_code == ticker,
+                DailyPrice.date == date_val
+            ).first()
+
+            adj_close = float(row['adj_close'])
+            volume = int(row['volume']) if pd.notna(row['volume']) else None
+
+            if existing:
+                existing.adj_close = adj_close
+                existing.volume = volume
+            else:
+                self.session.add(DailyPrice(
+                    ticker_code=ticker,
+                    date=date_val,
+                    adj_close=adj_close,
+                    volume=volume
+                ))
 
         self.session.commit()
 

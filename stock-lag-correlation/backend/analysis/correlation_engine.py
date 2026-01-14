@@ -13,7 +13,7 @@ from scipy import stats
 from numba import jit, prange
 from tqdm import tqdm
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import and_
 
 import sys
 sys.path.append('..')
@@ -325,39 +325,45 @@ class CorrelationEngine:
 
     def save_to_db(self, correlations_df: pd.DataFrame):
         """
-        相関結果をDBに保存
+        Save correlation results to DB (upsert)
         """
         if self.session is None:
             raise ValueError("DB session is required")
 
         count = 0
-        for _, row in tqdm(correlations_df.iterrows(), total=len(correlations_df), desc="DB保存"):
-            stmt = insert(Correlation).values(
-                ticker_a=row['ticker_a'],
-                ticker_b=row['ticker_b'],
-                timeframe=row['timeframe'],
-                lag=int(row['lag']),
-                correlation=float(row['correlation']),
-                p_value=float(row['p_value']),
-                direction=row['direction'],
-                calculated_at=datetime.now()
-            ).on_conflict_do_update(
-                index_elements=['ticker_a', 'ticker_b', 'timeframe', 'lag'],
-                set_={
-                    'correlation': float(row['correlation']),
-                    'p_value': float(row['p_value']),
-                    'direction': row['direction'],
-                    'calculated_at': datetime.now()
-                }
-            )
-            self.session.execute(stmt)
+        for _, row in tqdm(correlations_df.iterrows(), total=len(correlations_df), desc="Saving to DB"):
+            existing = self.session.query(Correlation).filter(
+                and_(
+                    Correlation.ticker_a == row['ticker_a'],
+                    Correlation.ticker_b == row['ticker_b'],
+                    Correlation.timeframe == row['timeframe'],
+                    Correlation.lag == int(row['lag'])
+                )
+            ).first()
+
+            if existing:
+                existing.correlation = float(row['correlation'])
+                existing.p_value = float(row['p_value'])
+                existing.direction = row['direction']
+                existing.calculated_at = datetime.now()
+            else:
+                self.session.add(Correlation(
+                    ticker_a=row['ticker_a'],
+                    ticker_b=row['ticker_b'],
+                    timeframe=row['timeframe'],
+                    lag=int(row['lag']),
+                    correlation=float(row['correlation']),
+                    p_value=float(row['p_value']),
+                    direction=row['direction'],
+                    calculated_at=datetime.now()
+                ))
             count += 1
 
             if count % 1000 == 0:
                 self.session.commit()
 
         self.session.commit()
-        logger.info(f"{count}件の相関データをDBに保存しました")
+        logger.info(f"{count} correlation records saved to DB")
 
     def load_from_db(
         self,

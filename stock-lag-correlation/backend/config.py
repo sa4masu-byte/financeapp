@@ -10,8 +10,8 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """アプリケーション設定"""
 
-    # データベース
-    database_url: str = "postgresql://localhost:5432/stock_correlation"
+    # Database (SQLite for local dev, PostgreSQL for production)
+    database_url: str = "sqlite:///./stock_correlation.db"
 
     # アプリケーション
     app_name: str = "Stock Lag Correlation"
