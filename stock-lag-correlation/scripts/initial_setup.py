@@ -92,7 +92,7 @@ def initial_setup():
         print("\n[Step 3] 株価データダウンロード (10年分)...")
         print("  ※ 数時間かかる場合があります")
 
-        all_data = fetcher.download_all_tickers(ticker_codes, period="10y")
+        all_data = fetcher.download_all_tickers(ticker_codes, years=10)
 
         # DBに保存
         print("\n  株価データをDBに保存中...")
@@ -102,7 +102,7 @@ def initial_setup():
 
         # 4. TOPIX取得
         print("\n[Step 4] TOPIXデータ取得...")
-        topix_prices = fetcher.download_topix(period="10y")
+        topix_prices = fetcher.download_topix(years=10)
 
         if topix_prices is None:
             print("  エラー: TOPIXデータの取得に失敗しました")

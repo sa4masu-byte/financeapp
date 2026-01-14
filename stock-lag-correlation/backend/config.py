@@ -34,10 +34,10 @@ class Settings(BaseSettings):
     default_max_lag_weekly: int = 6
     default_max_lag_monthly: int = 3
 
-    # yfinance設定
-    yfinance_request_delay: float = 0.5  # リクエスト間隔（秒）
-    yfinance_retry_delays: list = [0.5, 1, 2, 4, 8]  # exponential backoff
-    yfinance_batch_size: int = 50  # バッチサイズ
+    # Stooq設定
+    stooq_request_delay: float = 0.5  # リクエスト間隔（秒）
+    stooq_retry_delays: list = [0.5, 1, 2, 4, 8]  # exponential backoff
+    stooq_batch_size: int = 50  # バッチサイズ
 
     # ログ設定
     log_level: str = "INFO"
@@ -59,10 +59,10 @@ TIMEFRAMES = ["daily", "weekly", "monthly"]
 DIRECTIONS = ["positive", "negative"]
 
 # 銘柄コード変換
-def to_yfinance_ticker(ticker_code: str) -> str:
-    """DBの銘柄コードをyfinance形式に変換"""
-    return f"{ticker_code}.T"
+def to_stooq_ticker(ticker_code: str) -> str:
+    """DBの銘柄コードをStooq形式に変換"""
+    return f"{ticker_code}.JP"
 
-def from_yfinance_ticker(yf_ticker: str) -> str:
-    """yfinance形式をDB形式に変換"""
-    return yf_ticker.replace(".T", "")
+def from_stooq_ticker(stooq_ticker: str) -> str:
+    """Stooq形式をDB形式に変換"""
+    return stooq_ticker.replace(".JP", "")

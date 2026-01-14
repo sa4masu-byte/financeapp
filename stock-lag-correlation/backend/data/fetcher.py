@@ -1,7 +1,7 @@
 """
 株価データ取得モジュール
 - 東証プライム時価総額上位300銘柄の取得
-- yfinanceを使用した株価データダウンロード
+- Stooqを使用した株価データダウンロード
 """
 import logging
 import time
@@ -10,14 +10,14 @@ from typing import List, Dict, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import yfinance as yf
+import pandas_datareader.data as pdr
 from tqdm import tqdm
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 import sys
 sys.path.append('..')
-from config import get_settings, to_yfinance_ticker, from_yfinance_ticker
+from config import get_settings, to_stooq_ticker
 from models import Ticker, DailyPrice
 
 logger = logging.getLogger(__name__)
@@ -29,8 +29,8 @@ class DataFetcher:
 
     def __init__(self, db_session: Session):
         self.session = db_session
-        self.retry_delays = settings.yfinance_retry_delays
-        self.request_delay = settings.yfinance_request_delay
+        self.retry_delays = settings.stooq_retry_delays
+        self.request_delay = settings.stooq_request_delay
 
     def get_prime_300_tickers(self) -> List[Dict[str, str]]:
         """
@@ -192,33 +192,38 @@ class DataFetcher:
     def download_ticker_data(
         self,
         ticker: str,
-        period: str = "10y"
+        years: int = 10
     ) -> Optional[pd.DataFrame]:
         """
         単一銘柄のデータ取得（リトライ機能付き）
+        Stooqを使用
 
         Args:
             ticker: 銘柄コード（例: "7203"）
-            period: 取得期間（デフォルト: "10y"）
+            years: 取得年数（デフォルト: 10年）
 
         Returns:
-            DataFrame with columns: [Date, Adj Close, Volume] or None
+            DataFrame with columns: [adj_close, volume] or None
         """
-        yf_ticker = to_yfinance_ticker(ticker)
+        stooq_ticker = to_stooq_ticker(ticker)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=years * 365)
 
         for attempt, delay in enumerate(self.retry_delays):
             try:
-                stock = yf.Ticker(yf_ticker)
-                df = stock.history(period=period)
+                df = pdr.DataReader(stooq_ticker, 'stooq', start=start_date, end=end_date)
 
                 if df.empty:
                     logger.warning(f"{ticker}: データが空です")
                     return None
 
+                # Stooqは降順なので昇順に並び替え
+                df = df.sort_index()
+
                 # 必要なカラムのみ抽出
                 result = pd.DataFrame({
                     'adj_close': df['Close'],
-                    'volume': df['Volume'].astype(int)
+                    'volume': df['Volume'].astype(int) if 'Volume' in df.columns else 0
                 })
                 result.index = pd.to_datetime(result.index).date
 
@@ -236,14 +241,14 @@ class DataFetcher:
     def download_all_tickers(
         self,
         tickers: List[str],
-        period: str = "10y"
+        years: int = 10
     ) -> Dict[str, pd.DataFrame]:
         """
         全銘柄一括ダウンロード
 
         Args:
             tickers: 銘柄コードリスト
-            period: 取得期間
+            years: 取得年数
 
         Returns:
             Dict[ticker_code, DataFrame]
@@ -251,13 +256,13 @@ class DataFetcher:
         results = {}
         failed = []
 
-        batch_size = settings.yfinance_batch_size
+        batch_size = settings.stooq_batch_size
 
         for i in tqdm(range(0, len(tickers), batch_size), desc="バッチ処理"):
             batch = tickers[i:i + batch_size]
 
             for ticker in tqdm(batch, desc=f"バッチ {i // batch_size + 1}", leave=False):
-                df = self.download_ticker_data(ticker, period)
+                df = self.download_ticker_data(ticker, years)
                 if df is not None:
                     results[ticker] = df
                 else:
@@ -276,26 +281,29 @@ class DataFetcher:
 
         return results
 
-    def download_topix(self, period: str = "10y") -> Optional[pd.Series]:
+    def download_topix(self, years: int = 10) -> Optional[pd.Series]:
         """
-        TOPIXデータ取得
+        TOPIXデータ取得（Stooq使用）
 
         Returns:
             Series of TOPIX adjusted close prices
         """
-        # yfinanceでのTOPIXティッカー
-        topix_ticker = "^TPX"  # または ^TOPX
+        # StooqでのTOPIXティッカー
+        topix_ticker = "^TPX"
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=years * 365)
 
         for attempt, delay in enumerate(self.retry_delays):
             try:
-                topix = yf.Ticker(topix_ticker)
-                df = topix.history(period=period)
+                df = pdr.DataReader(topix_ticker, 'stooq', start=start_date, end=end_date)
 
                 if df.empty:
                     logger.warning("TOPIX: データが空です")
                     # 代替: 1306（TOPIX連動ETF）を試行
-                    return self._download_topix_etf(period)
+                    return self._download_topix_etf(years)
 
+                # Stooqは降順なので昇順に並び替え
+                df = df.sort_index()
                 result = df['Close']
                 result.index = pd.to_datetime(result.index).date
                 return result
@@ -306,17 +314,20 @@ class DataFetcher:
                     time.sleep(delay)
 
         # 代替手段
-        return self._download_topix_etf(period)
+        return self._download_topix_etf(years)
 
-    def _download_topix_etf(self, period: str = "10y") -> Optional[pd.Series]:
+    def _download_topix_etf(self, years: int = 10) -> Optional[pd.Series]:
         """
-        TOPIX連動ETF（1306）からTOPIX代替データを取得
+        TOPIX連動ETF（1306）からTOPIX代替データを取得（Stooq使用）
         """
         logger.info("TOPIX連動ETF(1306)を代替として使用")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=years * 365)
+
         try:
-            etf = yf.Ticker("1306.T")
-            df = etf.history(period=period)
+            df = pdr.DataReader("1306.JP", 'stooq', start=start_date, end=end_date)
             if not df.empty:
+                df = df.sort_index()
                 result = df['Close']
                 result.index = pd.to_datetime(result.index).date
                 return result
