@@ -1,0 +1,65 @@
+services:
+  # バックエンドAPI（FastAPI）
+  - type: web
+    name: stock-correlation-api
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stock-correlation-db
+          property: connectionString
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TZ
+        value: Asia/Tokyo
+
+  # フロントエンド（React）
+  - type: web
+    name: stock-correlation-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://stock-correlation-api.onrender.com/api
+
+  # 日次バッチ（Cron Job）
+  - type: cron
+    name: stock-correlation-daily-batch
+    env: python
+    schedule: "0 7 * * 1-5"  # 日本時間16:00（UTC 7:00）、月〜金
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python backend/batch/daily_update.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stock-correlation-db
+          property: connectionString
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TZ
+        value: Asia/Tokyo
+
+  # 月次相関再計算バッチ（Cron Job）
+  - type: cron
+    name: stock-correlation-monthly-recalc
+    env: python
+    schedule: "0 8 1 * *"  # 毎月1日 日本時間17:00（UTC 8:00）
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python backend/batch/correlation_recalc.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stock-correlation-db
+          property: connectionString
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TZ
+        value: Asia/Tokyo
+
+databases:
+  - name: stock-correlation-db
+    databaseName: stock_correlation
+    plan: starter
