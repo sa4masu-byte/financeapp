@@ -1,4 +1,4 @@
-# バックエンド
+# Backend
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
@@ -6,7 +6,7 @@ psycopg2-binary==2.9.9
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
-# データ分析
+# Data Analysis
 pandas==2.1.3
 numpy==1.26.2
 scipy==1.11.4
@@ -14,16 +14,16 @@ statsmodels==0.14.0
 yfinance==0.2.32
 numba==0.58.1
 
-# スクレイピング
+# Scraping
 requests==2.31.0
 beautifulsoup4==4.12.2
 
-# ユーティリティ
+# Utilities
 python-dotenv==1.0.0
 tqdm==4.66.1
 python-dateutil==2.8.2
 
-# テスト
+# Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 httpx==0.25.2
