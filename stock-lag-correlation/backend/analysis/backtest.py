@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import and_
 
 import sys
 sys.path.append('..')
@@ -271,14 +271,14 @@ class BacktestEngine:
 
     def save_to_db(self, backtest_df: pd.DataFrame):
         """
-        バックテスト結果をDBに保存
+        Save backtest results to DB (upsert)
         """
         if self.session is None:
             raise ValueError("DB session is required")
 
         count = 0
-        for _, row in tqdm(backtest_df.iterrows(), total=len(backtest_df), desc="バックテスト保存"):
-            # 日付の変換
+        for _, row in tqdm(backtest_df.iterrows(), total=len(backtest_df), desc="Saving backtest"):
+            # Convert dates
             start_date = row['test_period_start']
             end_date = row['test_period_end']
 
@@ -287,34 +287,40 @@ class BacktestEngine:
             if hasattr(end_date, 'date'):
                 end_date = end_date.date()
 
-            stmt = insert(BacktestResult).values(
-                ticker_a=row['ticker_a'],
-                ticker_b=row['ticker_b'],
-                timeframe=row['timeframe'],
-                lag=int(row['lag']),
-                hit_rate=float(row['hit_rate']),
-                total_signals=int(row['total_signals']),
-                successful_signals=int(row['successful_signals']),
-                test_period_start=start_date,
-                test_period_end=end_date
-            ).on_conflict_do_update(
-                index_elements=['ticker_a', 'ticker_b', 'timeframe', 'lag'],
-                set_={
-                    'hit_rate': float(row['hit_rate']),
-                    'total_signals': int(row['total_signals']),
-                    'successful_signals': int(row['successful_signals']),
-                    'test_period_start': start_date,
-                    'test_period_end': end_date
-                }
-            )
-            self.session.execute(stmt)
+            existing = self.session.query(BacktestResult).filter(
+                and_(
+                    BacktestResult.ticker_a == row['ticker_a'],
+                    BacktestResult.ticker_b == row['ticker_b'],
+                    BacktestResult.timeframe == row['timeframe'],
+                    BacktestResult.lag == int(row['lag'])
+                )
+            ).first()
+
+            if existing:
+                existing.hit_rate = float(row['hit_rate'])
+                existing.total_signals = int(row['total_signals'])
+                existing.successful_signals = int(row['successful_signals'])
+                existing.test_period_start = start_date
+                existing.test_period_end = end_date
+            else:
+                self.session.add(BacktestResult(
+                    ticker_a=row['ticker_a'],
+                    ticker_b=row['ticker_b'],
+                    timeframe=row['timeframe'],
+                    lag=int(row['lag']),
+                    hit_rate=float(row['hit_rate']),
+                    total_signals=int(row['total_signals']),
+                    successful_signals=int(row['successful_signals']),
+                    test_period_start=start_date,
+                    test_period_end=end_date
+                ))
             count += 1
 
             if count % 1000 == 0:
                 self.session.commit()
 
         self.session.commit()
-        logger.info(f"{count}件のバックテスト結果をDBに保存しました")
+        logger.info(f"{count} backtest records saved to DB")
 
     def load_from_db(
         self,

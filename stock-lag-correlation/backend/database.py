@@ -1,5 +1,5 @@
 """
-データベース接続モジュール
+Database connection module
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
@@ -10,24 +10,31 @@ from config import get_settings
 
 settings = get_settings()
 
-# SQLAlchemy エンジン
-engine = create_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-)
+# SQLAlchemy engine configuration
+# SQLite needs different settings than PostgreSQL
+if settings.database_url.startswith("sqlite"):
+    engine = create_engine(
+        settings.database_url,
+        connect_args={"check_same_thread": False},  # Required for SQLite
+    )
+else:
+    engine = create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+    )
 
-# セッションファクトリ
+# Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# ベースクラス
+# Base class
 Base = declarative_base()
 
 
 def get_db() -> Generator[Session, None, None]:
     """
-    FastAPI Dependency用のDBセッション取得
+    Get DB session for FastAPI Dependency
     """
     db = SessionLocal()
     try:
@@ -39,7 +46,7 @@ def get_db() -> Generator[Session, None, None]:
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
     """
-    バッチ処理用のDBセッション取得（コンテキストマネージャ）
+    Get DB session for batch processing (context manager)
     """
     db = SessionLocal()
     try:
@@ -54,7 +61,7 @@ def get_db_session() -> Generator[Session, None, None]:
 
 def init_db():
     """
-    データベース初期化（テーブル作成）
+    Initialize database (create tables)
     """
     from models import (
         Ticker, DailyPrice, Return, Correlation,

@@ -10,7 +10,6 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import and_
 
 import sys
@@ -170,11 +169,11 @@ class ReturnCalculator:
         timeframe: str
     ):
         """
-        リターンデータをDBに保存
+        Save return data to DB (upsert)
 
         Args:
-            adjusted_returns: TOPIX控除済みリターン
-            raw_returns: 生リターン
+            adjusted_returns: TOPIX-adjusted returns
+            raw_returns: Raw returns
             timeframe: 'daily', 'weekly', 'monthly'
         """
         if self.session is None:
@@ -189,35 +188,43 @@ class ReturnCalculator:
                 if pd.isna(adj_ret):
                     continue
 
-                # dateオブジェクトに変換
+                # Convert to date object
                 if hasattr(date_val, 'date'):
                     date_obj = date_val.date()
                 else:
                     date_obj = date_val
 
-                stmt = insert(Return).values(
-                    ticker_code=ticker,
-                    date=date_obj,
-                    timeframe=timeframe,
-                    return_value=float(raw_ret) if raw_ret is not None and not pd.isna(raw_ret) else None,
-                    topix_adjusted_return=float(adj_ret)
-                ).on_conflict_do_update(
-                    index_elements=['ticker_code', 'date', 'timeframe'],
-                    set_={
-                        'return_value': float(raw_ret) if raw_ret is not None and not pd.isna(raw_ret) else None,
-                        'topix_adjusted_return': float(adj_ret)
-                    }
-                )
-                self.session.execute(stmt)
+                return_value = float(raw_ret) if raw_ret is not None and not pd.isna(raw_ret) else None
+                adj_return_value = float(adj_ret)
+
+                existing = self.session.query(Return).filter(
+                    and_(
+                        Return.ticker_code == ticker,
+                        Return.date == date_obj,
+                        Return.timeframe == timeframe
+                    )
+                ).first()
+
+                if existing:
+                    existing.return_value = return_value
+                    existing.topix_adjusted_return = adj_return_value
+                else:
+                    self.session.add(Return(
+                        ticker_code=ticker,
+                        date=date_obj,
+                        timeframe=timeframe,
+                        return_value=return_value,
+                        topix_adjusted_return=adj_return_value
+                    ))
                 count += 1
 
-                # バッチコミット
+                # Batch commit
                 if count % 10000 == 0:
                     self.session.commit()
-                    logger.info(f"{timeframe}: {count}件保存済み...")
+                    logger.info(f"{timeframe}: {count} records saved...")
 
         self.session.commit()
-        logger.info(f"{timeframe}: 合計{count}件を保存しました")
+        logger.info(f"{timeframe}: Total {count} records saved")
 
     def load_returns_from_db(
         self,
