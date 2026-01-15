@@ -47,10 +47,9 @@ def run_correlation_analysis():
 
             if prices:
                 df = pd.DataFrame([
-                    {'date': p.date, 'adj_close': p.adj_close, 'volume': p.volume}
+                    {'adj_close': float(p.adj_close), 'volume': p.volume or 0}
                     for p in prices
-                ])
-                df.set_index('date', inplace=True)
+                ], index=[p.date for p in prices])
                 all_data[ticker_code] = df
 
         print(f"  読み込んだ銘柄数: {len(all_data)}")
@@ -64,11 +63,11 @@ def run_correlation_analysis():
         if not topix_prices:
             # TOPIXがなければ最初の銘柄で代用（簡易的）
             first_ticker = list(all_data.keys())[0]
-            topix_series = all_data[first_ticker]['adj_close']
+            topix_series = pd.Series(all_data[first_ticker]['adj_close'])
             print(f"  TOPIX代替: {first_ticker}のデータを使用")
         else:
             topix_series = pd.Series(
-                {p.date: p.adj_close for p in topix_prices}
+                {p.date: float(p.adj_close) for p in topix_prices}
             )
             print(f"  TOPIX代替データ: {len(topix_series)}日分")
 
