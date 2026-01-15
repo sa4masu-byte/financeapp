@@ -132,9 +132,10 @@ def initial_setup():
         # 6. 相関分析
         print("\n[Step 6] 相関分析 (※ 数時間かかる場合があります)...")
 
+        # Bonferroni補正は厳しすぎるため、min_correlationとp-value個別で判定
         correlation_engine = CorrelationEngine(
-            min_correlation=0.30,
-            alpha=0.05,
+            min_correlation=0.25,  # 閾値を緩和
+            alpha=0.01,  # p-value閾値
             db_session=session
         )
 
@@ -151,7 +152,8 @@ def initial_setup():
             correlations_df = correlation_engine.analyze_all_pairs(
                 all_returns[timeframe],
                 timeframe,
-                max_lag
+                max_lag,
+                use_bonferroni=False  # Bonferroni補正を無効化
             )
 
             if not correlations_df.empty:
