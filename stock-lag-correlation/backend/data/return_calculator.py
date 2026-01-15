@@ -80,7 +80,7 @@ class ReturnCalculator:
         月足リターン: 月末基準でリサンプリング
         """
         daily_returns.index = pd.to_datetime(daily_returns.index)
-        return daily_returns.resample('ME').sum()
+        return daily_returns.resample('M').sum()
 
     def calculate_all_returns(
         self,
